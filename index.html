@@ -286,11 +286,12 @@ async function runDetection(w, h) {
       // 목업 안에 작게 들어간 학생증)에서는 축소된 캔버스로 검출하면 얼굴이 더 작아져 놓치기 쉬움.
       // 원본 이미지(img)에서 직접 검출한 뒤, 좌표만 화면 캔버스 배율에 맞게 환산해서 사용.
       const scale = w / img.width;
-      let dets = await faceapi.detectAllFaces(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.3 }));
-      // 경량 모델이 하나도 못 찾았으면, 더 무겁지만 정확한 모델로 한 번 더 시도
+      let dets = await faceapi.detectAllFaces(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.4 }));
+      // 경량 모델이 하나도 못 찾았으면, 더 무겁지만 정확한 모델로 한 번 더 시도.
+      // minConfidence는 라이브러리 기본값(0.5) 사용 — 너무 낮추면 배경을 얼굴로 오탐지함
       if (dets.length === 0 && ssdModelReady) {
         setStatus('경량 모델로 얼굴을 못 찾아 정밀 모델로 재시도 중...');
-        dets = await faceapi.detectAllFaces(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 }));
+        dets = await faceapi.detectAllFaces(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }));
       }
       dets.forEach(d => {
         regions.push({
