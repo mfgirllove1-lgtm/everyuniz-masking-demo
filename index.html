@@ -271,9 +271,17 @@ async function runDetection(w, h) {
   // 얼굴 감지
   if (modelsReady) {
     try {
-      const dets = await faceapi.detectAllFaces(baseCanvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 320 }));
+      // 화면 표시용 캔버스(baseCanvas)는 최대 760px로 축소돼 있어, 사진 속 얼굴이 작게 나온 이미지(예: 폰
+      // 목업 안에 작게 들어간 학생증)에서는 축소된 캔버스로 검출하면 얼굴이 더 작아져 놓치기 쉬움.
+      // 원본 이미지(img)에서 직접 검출한 뒤, 좌표만 화면 캔버스 배율에 맞게 환산해서 사용.
+      const scale = w / img.width;
+      const dets = await faceapi.detectAllFaces(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.3 }));
       dets.forEach(d => {
-        regions.push({ x: d.box.x, y: d.box.y, w: d.box.width, h: d.box.height, type: 'face', label: '얼굴', masked: true });
+        regions.push({
+          x: d.box.x * scale, y: d.box.y * scale,
+          w: d.box.width * scale, h: d.box.height * scale,
+          type: 'face', label: '얼굴', masked: true
+        });
       });
       renderRegions();
     } catch (e) { console.error('face detect fail', e); }
