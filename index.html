@@ -304,6 +304,7 @@ async function runDetection(w, h) {
     }
 
     const docType = document.querySelector('input[name="docType"]:checked').value; // 'univ' | 'high'
+    const material = document.getElementById('materialType').value;
     const isHighYear = docType === 'univ' && document.getElementById('highYearCheck').checked;
     // 노출 유지(마스킹 금지) 라벨: 대학생은 대학명·이름·학번, 고등학생은 학교명·이름만
     const PROTECT_KEYWORDS = docType === 'high'
@@ -354,6 +355,13 @@ async function runDetection(w, h) {
       const isCard = CARD_PATTERN.test(compact);
       const isEmail = EMAIL_PATTERN.test(compact);
       const isNumericish = digitCount >= 4;
+
+      // 학생증은 "학번" 라벨 없이(또는 OCR이 라벨을 잘못 읽어서) 숫자만 단독으로 찍힌 경우가 많음.
+      // 주민번호/전화번호/카드번호 형식이 아닌 6~12자리 숫자 단독 줄은 학번으로 보고 마스킹하지 않음
+      if (!isForceMask && docType === 'univ' && material === 'studentcard' && !isRRN && !isPhone && !isCard && !isEmail) {
+        const digitsOnly = raw.replace(/[^0-9]/g, '');
+        if (digitsOnly.length >= 6 && digitsOnly.length <= 12) return;
+      }
 
       if (isForceMask || isRRN || isPhone || isCard || isEmail || isNumericish) {
         regions.push({
