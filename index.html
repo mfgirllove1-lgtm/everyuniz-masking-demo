@@ -349,6 +349,17 @@ async function runDetection(w, h) {
           if (!bottomDateLine || ln.bbox.y0 > bottomDateLine.bbox.y0) bottomDateLine = ln;
         }
       });
+      // 오래된 스캔본 등 OCR이 심하게 깨져서 날짜 형식이 아예 안 잡히는 경우를 위한 2차 폴백:
+      // 정확한 날짜 형식 매칭에 실패했다면, 문서 하단 30% 영역에서 숫자가 섞인 가장 아래쪽 줄을 발행일로 간주
+      if (!bottomDateLine) {
+        lines.forEach(ln => {
+          const c = (ln.text || '').replace(/\s+/g, '');
+          const digitCount = (c.match(/[0-9]/g) || []).length;
+          if (ln.bbox && digitCount >= 2 && ln.bbox.y0 > h * 0.7) {
+            if (!bottomDateLine || ln.bbox.y0 > bottomDateLine.bbox.y0) bottomDateLine = ln;
+          }
+        });
+      }
     }
 
     // 절대 노출되면 안 되는 항목 — 보호 키워드(이름/성명 등)와 겹쳐도 무조건 이쪽이 우선
