@@ -159,6 +159,8 @@ function setStatus(msg, isErr) {
   statusLine.className = 'status-line' + (isErr ? ' err' : '');
 }
 
+let ssdModelReady = false;
+
 async function loadModels() {
   try {
     setStatus('얼굴 인식 모델 로딩 중...');
@@ -168,6 +170,15 @@ async function loadModels() {
   } catch (e) {
     console.error(e);
     setStatus('얼굴 인식 모델 로딩 실패 (네트워크 문제일 수 있음) — 수동 마스킹은 계속 사용 가능합니다.', true);
+    return;
+  }
+  // 더 무겁지만 정확한 모델(SsdMobilenetv1)은 백그라운드에서 추가로 로딩 — 가벼운 모델이 얼굴을
+  // 못 찾았을 때 2차 시도용. 로딩 실패해도 기본 인식엔 지장 없으니 조용히 무시.
+  try {
+    await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+    ssdModelReady = true;
+  } catch (e) {
+    console.error('ssd model load fail', e);
   }
 }
 loadModels();
@@ -275,7 +286,12 @@ async function runDetection(w, h) {
       // 목업 안에 작게 들어간 학생증)에서는 축소된 캔버스로 검출하면 얼굴이 더 작아져 놓치기 쉬움.
       // 원본 이미지(img)에서 직접 검출한 뒤, 좌표만 화면 캔버스 배율에 맞게 환산해서 사용.
       const scale = w / img.width;
-      const dets = await faceapi.detectAllFaces(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.3 }));
+      let dets = await faceapi.detectAllFaces(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.3 }));
+      // 경량 모델이 하나도 못 찾았으면, 더 무겁지만 정확한 모델로 한 번 더 시도
+      if (dets.length === 0 && ssdModelReady) {
+        setStatus('경량 모델로 얼굴을 못 찾아 정밀 모델로 재시도 중...');
+        dets = await faceapi.detectAllFaces(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 }));
+      }
       dets.forEach(d => {
         regions.push({
           x: d.box.x * scale, y: d.box.y * scale,
