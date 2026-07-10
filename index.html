@@ -365,6 +365,11 @@ async function runDetection(w, h) {
           }
         });
       }
+      console.log('[발행일 디버그]', {
+        isHighYear, material, h, matchedByPattern,
+        allLines: lines.map(ln => ({ text: ln.text, y0: ln.bbox && ln.bbox.y0, ratio: ln.bbox && (ln.bbox.y0 / h).toFixed(2) })),
+        protected: [...bottomProtectedLines].map(ln => ln.text)
+      });
     }
 
     // 절대 노출되면 안 되는 항목 — 보호 키워드(이름/성명 등)와 겹쳐도 무조건 이쪽이 우선
