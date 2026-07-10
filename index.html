@@ -343,7 +343,9 @@ async function runDetection(w, h) {
     // 보호하면 엉뚱한 걸 잡을 수 있어, 하단 영역 안의 숫자 포함 줄은 전부 보호 대상으로 넉넉하게 잡음
     const DATE_PATTERN = /\d{4}\s?[.\-/년]\s?\d{1,2}\s?[.\-/월]\s?\d{1,2}\s?일?/;
     const bottomProtectedLines = new Set();
-    if (isHighYear) {
+    // 학생증은 발행일 개념이 없고, 하단에 있는 숫자는 오히려 카드번호 등 개인정보일 가능성이 높아서
+    // material이 studentcard면 이 보호 로직 자체를 적용하지 않음(고학번+학생증 업로드는 이미 막혀있지만 이중 안전장치)
+    if (isHighYear && material !== 'studentcard') {
       let matchedByPattern = false;
       lines.forEach(ln => {
         const c = (ln.text || '').replace(/\s+/g, '');
