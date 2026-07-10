@@ -338,37 +338,20 @@ async function runDetection(w, h) {
     const DATE_KEEP_KEYWORDS = ['발급일','발급일자','교부일','교부일자','발행일','조회일','신청일','요청일자','출력일','수여일자','학위수여일자','증서번호'];
     const protectKeywords = isHighYear ? [...PROTECT_KEYWORDS, ...DATE_KEEP_KEYWORDS] : PROTECT_KEYWORDS;
 
-    // 발행일은 라벨 없이 문서 맨 하단(서명/직인 근처)에 날짜만 찍혀 있는 경우가 많음 — 고학번은 라벨 인식
-    // 실패에 대비해 위치 기반으로 추가 보호. 도장 이미지 등을 OCR이 숫자로 오인식해 "가장 아래쪽 한 줄"만
-    // 보호하면 엉뚱한 걸 잡을 수 있어, 하단 영역 안의 숫자 포함 줄은 전부 보호 대상으로 넉넉하게 잡음
-    const DATE_PATTERN = /\d{4}\s?[.\-/년]\s?\d{1,2}\s?[.\-/월]\s?\d{1,2}\s?일?/;
+    // 발행일은 라벨 없이 문서 맨 하단(서명/직인 근처)에 날짜만 찍혀 있는 경우가 많음 — 고학번은 라벨/형식 인식
+    // 실패에 대비해 위치 기반으로 보호. 문서 중간(성적·평점 등)의 숫자가 우연히 날짜 형식처럼 보여서
+    // "문서 전체에서 날짜를 이미 찾았다"고 오판하면 정작 하단 진짜 발행일을 놓치는 문제가 있었음 — 그래서
+    // 판단 범위를 아예 "하단 영역 안"으로만 좁혀서, 그 안의 숫자 포함 줄은 전부 보호 대상으로 넉넉하게 잡음
     const bottomProtectedLines = new Set();
     // 학생증은 발행일 개념이 없고, 하단에 있는 숫자는 오히려 카드번호 등 개인정보일 가능성이 높아서
     // material이 studentcard면 이 보호 로직 자체를 적용하지 않음(고학번+학생증 업로드는 이미 막혀있지만 이중 안전장치)
     if (isHighYear && material !== 'studentcard') {
-      let matchedByPattern = false;
       lines.forEach(ln => {
         const c = (ln.text || '').replace(/\s+/g, '');
-        if (ln.bbox && DATE_PATTERN.test(c)) {
+        const digitCount = (c.match(/[0-9]/g) || []).length;
+        if (ln.bbox && digitCount >= 2 && ln.bbox.y0 > h * 0.75) {
           bottomProtectedLines.add(ln);
-          matchedByPattern = true;
         }
-      });
-      // 오래된 스캔본 등 OCR이 심하게 깨져서 날짜 형식이 아예 안 잡히는 경우를 위한 2차 폴백:
-      // 문서 하단 25% 영역에 있는, 숫자가 섞인 줄들을 전부 발행일 후보로 보호
-      if (!matchedByPattern) {
-        lines.forEach(ln => {
-          const c = (ln.text || '').replace(/\s+/g, '');
-          const digitCount = (c.match(/[0-9]/g) || []).length;
-          if (ln.bbox && digitCount >= 2 && ln.bbox.y0 > h * 0.75) {
-            bottomProtectedLines.add(ln);
-          }
-        });
-      }
-      console.log('[발행일 디버그]', {
-        isHighYear, material, h, matchedByPattern,
-        allLines: lines.map(ln => ({ text: ln.text, y0: ln.bbox && ln.bbox.y0, ratio: ln.bbox && (ln.bbox.y0 / h).toFixed(2) })),
-        protected: [...bottomProtectedLines].map(ln => ln.text)
       });
     }
 
