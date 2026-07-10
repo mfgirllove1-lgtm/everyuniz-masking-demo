@@ -392,10 +392,11 @@ async function runDetection(w, h) {
       const isEmail = EMAIL_PATTERN.test(compact);
       const isNumericish = digitCount >= 4;
 
-      // 학생증은 "학번" 라벨 없이(또는 OCR이 라벨을 잘못 읽어서) 숫자만 단독으로 찍힌 경우가 많음.
-      // 학번은 점/대시 없이 끊기지 않고 이어진 숫자열이라는 점으로, 점·대시로 나뉜 생년월일("2004.01.23")과
-      // 구분함 — 전체 숫자를 모아 세면 생년월일도 8자리라 학번처럼 보이는 문제가 있었음
-      if (!isForceMask && docType === 'univ' && material === 'studentcard' && !isRRN && !isPhone && !isCard && !isEmail) {
+      // "학번" 라벨 없이(또는 표 형태 문서에서 OCR이 라벨을 심하게 잘못 읽어서) 숫자만 단독으로 찍힌 경우가 많음.
+      // 학번은 대학생 자료 전체(학생증뿐 아니라 재학증명서·성적증명서·포털 스크린샷)에서 공통 필수 노출 항목.
+      // 점/대시 없이 끊기지 않고 이어진 숫자열이라는 점으로, 점·대시로 나뉜 생년월일("2004.01.23")과 구분함
+      // — 전체 숫자를 모아 세면 생년월일도 8자리라 학번처럼 보이는 문제가 있었음
+      if (!isForceMask && docType === 'univ' && !isRRN && !isPhone && !isCard && !isEmail) {
         const digitRuns = raw.match(/\d+/g) || [];
         const longestRun = digitRuns.reduce((a, b) => (b.length > a.length ? b : a), '');
         if (longestRun.length >= 6 && longestRun.length <= 12) return;
