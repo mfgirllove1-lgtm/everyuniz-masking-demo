@@ -382,10 +382,12 @@ async function runDetection(w, h) {
       const isNumericish = digitCount >= 4;
 
       // 학생증은 "학번" 라벨 없이(또는 OCR이 라벨을 잘못 읽어서) 숫자만 단독으로 찍힌 경우가 많음.
-      // 주민번호/전화번호/카드번호 형식이 아닌 6~12자리 숫자 단독 줄은 학번으로 보고 마스킹하지 않음
+      // 학번은 점/대시 없이 끊기지 않고 이어진 숫자열이라는 점으로, 점·대시로 나뉜 생년월일("2004.01.23")과
+      // 구분함 — 전체 숫자를 모아 세면 생년월일도 8자리라 학번처럼 보이는 문제가 있었음
       if (!isForceMask && docType === 'univ' && material === 'studentcard' && !isRRN && !isPhone && !isCard && !isEmail) {
-        const digitsOnly = raw.replace(/[^0-9]/g, '');
-        if (digitsOnly.length >= 6 && digitsOnly.length <= 12) return;
+        const digitRuns = raw.match(/\d+/g) || [];
+        const longestRun = digitRuns.reduce((a, b) => (b.length > a.length ? b : a), '');
+        if (longestRun.length >= 6 && longestRun.length <= 12) return;
       }
 
       if (isForceMask || isRRN || isPhone || isCard || isEmail || isNumericish) {
