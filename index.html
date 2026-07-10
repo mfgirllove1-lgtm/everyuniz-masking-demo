@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>학생인증 자료 자동 마스킹 프로토타입</title>
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    background: #f4f5f7; margin: 0; padding: 24px; color: #1b1d21;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #666; font-size: 13px; margin-bottom: 20px; line-height: 1.6; }
+  .badge { display:inline-block; background:#eef4ff; color:#2456d6; font-size:12px; padding:2px 8px; border-radius:10px; margin-bottom:12px;}
+  .card { background: #fff; border: 1px solid #e4e6eb; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  .upload-zone {
+    border: 2px dashed #c7cbd4; border-radius: 10px; padding: 32px; text-align: center;
+    cursor: pointer; color: #888; transition: 0.15s;
+  }
+  .upload-zone:hover, .upload-zone.drag { border-color: #2456d6; background: #f7faff; color: #2456d6; }
+  input[type=file] { display: none; }
+  .status-line { font-size: 13px; color: #555; margin-top: 10px; min-height: 18px; }
+  .status-line.err { color: #c0392b; }
+  .main-grid { display: grid; grid-template-columns: 1fr 260px; gap: 16px; align-items: start; }
+  .canvas-wrap { position: relative; display: inline-block; max-width: 100%; }
+  canvas { display: block; max-width: 100%; border-radius: 8px; }
+  #overlay { position: absolute; top: 0; left: 0; cursor: crosshair; touch-action: none; }
+  .panel h3 { font-size: 13px; margin: 0 0 8px; color: #444; }
+  .region-item {
+    display: flex; align-items: center; gap: 8px; font-size: 12.5px;
+    padding: 6px 8px; border-radius: 6px; margin-bottom: 4px; background: #f7f8fa;
+  }
+  .region-item.masked { background: #fdeceb; }
+  .region-item .tag { font-size: 10px; padding: 1px 5px; border-radius: 4px; background: #dfe3ea; color: #555; }
+  .region-item .tag.face { background: #dbeafe; color: #1d4ed8; }
+  .region-item .tag.text { background: #fef3c7; color: #92400e; }
+  .region-item .tag.manual { background: #e0e7ff; color: #4338ca; }
+  .region-item .txt { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .region-item .toggle {
+    border: none; border-radius: 5px; width: 22px; height: 22px; font-size: 14px; font-weight: 700;
+    cursor: pointer; line-height: 1; flex-shrink: 0;
+  }
+  .region-item .toggle.is-masked { background: #fde0dd; color: #c0392b; }
+  .region-item .toggle.is-unmasked { background: #e3f0e6; color: #1e7a34; }
+  .region-item .del { border: none; background: none; color: #999; font-size: 14px; cursor: pointer; padding: 0 2px; line-height: 1; flex-shrink: 0; }
+  .region-item .del:hover { color: #c0392b; }
+  .btn {
+    display: inline-block; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px;
+    cursor: pointer; font-weight: 600;
+  }
+  .btn-primary { background: #2456d6; color: #fff; }
+  .btn-primary:disabled { background: #b7c3e0; cursor: not-allowed; }
+  .btn-ghost { background: #eef0f3; color: #333; }
+  .btn-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .legend { font-size: 11.5px; color: #777; margin-top: 8px; line-height: 1.6; }
+  .result-img { max-width: 100%; border-radius: 8px; border: 1px solid #e4e6eb; margin-top: 12px; }
+  .hint { font-size: 12px; color: #888; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="badge">PROTOTYPE — 온디바이스 처리, 서버 전송 없음</span>
+  <h1>학생인증 자료 자동 마스킹 (개념 검증 데모)</h1>
+  <p class="sub">
+    학생증 / 포털 스크린샷 / 재학증명서 / 성적증명서 / 생활기록부 원본을 올리면, <b>브라우저 안에서만</b> 인증에 필요한 항목
+    (대학생: 대학명·이름·학번, 고학번은 발행일자도 / 고등학생: 고등학교명·이름)<b>만 남기고</b>
+    나머지(주민번호·생년월일·전화번호·얼굴 등)를 자동으로 가립니다.
+    원본 이미지는 서버로 전송되지 않고, 확정 버튼을 눌러야만 마스킹된 최종 결과가 만들어집니다.
+    자동 인식이 놓친 부분은 우측 목록이나 이미지 위 드래그로 직접 추가/해제할 수 있습니다.
+  </p>
+
+  <div class="card">
+    <div style="display:flex;gap:18px;font-size:13px;color:#333;margin-bottom:10px;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <input type="radio" name="docType" id="docTypeUniv" value="univ" checked style="width:15px;height:15px;">
+        대학(원)생 자료 <span style="color:#888;">(학생증/재학증명서/성적증명서/포털)</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <input type="radio" name="docType" id="docTypeHigh" value="high" style="width:15px;height:15px;">
+        고등학생 자료 <span style="color:#888;">(학생증/성적증명서/생활기록부/기타)</span>
+      </label>
+    </div>
+    <label id="highYearRow" style="display:flex;align-items:center;gap:8px;font-size:13px;color:#333;margin-bottom:14px;cursor:pointer;">
+      <input type="checkbox" id="highYearCheck" style="width:16px;height:16px;">
+      이 자료는 <b>고학번(당해년도 기준 입학 6년 차 이상)</b> 재학증명서/성적증명서/포털 스크린샷이에요 — 요청일자·발행일도 노출 유지할게요
+    </label>
+    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#333;margin-bottom:14px;">
+      업로드할 자료 종류:
+      <select id="materialType" style="font-size:13px;padding:5px 8px;border-radius:6px;border:1px solid #c7cbd4;"></select>
+    </div>
+    <div class="status-line err" id="validationError" style="display:none;"></div>
+    <div class="upload-zone" id="dropZone">
+      📄 클릭하거나 이미지를 여기로 드래그하세요 (학생증 / 캡처 / 증명서)
+      <input type="file" id="fileInput" accept="image/*">
+    </div>
+    <div class="status-line" id="statusLine"></div>
+  </div>
+
+  <div class="card" id="workArea" style="display:none;">
+    <div id="kakaoRejectBanner" style="display:none;background:#fdeceb;color:#c0392b;font-weight:700;font-size:14px;padding:16px;border-radius:10px;margin-bottom:16px;"></div>
+    <div class="main-grid" id="mainGrid">
+      <div>
+        <div class="canvas-wrap" id="canvasWrap">
+          <canvas id="baseCanvas"></canvas>
+          <canvas id="overlay"></canvas>
+        </div>
+        <div class="hint">이미지 위를 손가락(터치)이나 마우스로 드래그하면 새 마스킹 영역이 추가돼요(자동으로 ＋ 적용).</div>
+      </div>
+      <div class="panel">
+        <h3>감지된 영역 (<span id="regionCount">0</span>)</h3>
+        <div id="regionList"></div>
+        <div class="legend">
+          🔵 얼굴 자동감지 &nbsp; 🟠 텍스트(주민번호·전화번호·기타 숫자 등 추정) &nbsp; 🟣 수동 추가<br>
+          위에서 선택한 서류 유형의 인증 필수 항목(대학생: 대학명·이름·학번[·고학번 발행일자] / 고등학생: 고등학교명·이름)은 자동 제외돼요<br>
+          <span style="color:#c0392b;font-weight:700;">－</span> 가리기 해제 &nbsp; <span style="color:#1e7a34;font-weight:700;">＋</span> 가리기 적용 &nbsp; ✕ 목록에서 삭제
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-ghost" id="resetBtn">전체 초기화</button>
+          <button class="btn btn-primary" id="confirmBtn">마스킹 확정</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="resultArea" style="display:none;">
+    <h3 style="margin-top:0;font-size:14px;">✅ 마스킹 확정 결과 (이 화면만 심사자에게 전달됨)</h3>
+    <img id="resultImg" class="result-img">
+    <div class="btn-row">
+      <a class="btn btn-primary" id="downloadBtn" download="masked.png">마스킹 이미지 다운로드</a>
+      <button class="btn btn-ghost" id="submitBtn">제출하기 (데모)</button>
+      <button class="btn btn-ghost" id="editAgainBtn">다시 수정</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
+const fileInput = document.getElementById('fileInput');
+const dropZone = document.getElementById('dropZone');
+const statusLine = document.getElementById('statusLine');
+const workArea = document.getElementById('workArea');
+const baseCanvas = document.getElementById('baseCanvas');
+const overlay = document.getElementById('overlay');
+const regionList = document.getElementById('regionList');
+const regionCount = document.getElementById('regionCount');
+const resultArea = document.getElementById('resultArea');
+const resultImg = document.getElementById('resultImg');
+const downloadBtn = document.getElementById('downloadBtn');
+
+let regions = []; // {x,y,w,h,type:'face'|'text'|'manual', label, masked:bool}
+let img = new Image();
+let modelsReady = false;
+
+function setStatus(msg, isErr) {
+  statusLine.textContent = msg;
+  statusLine.className = 'status-line' + (isErr ? ' err' : '');
+}
+
+async function loadModels() {
+  try {
+    setStatus('얼굴 인식 모델 로딩 중...');
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+    modelsReady = true;
+    setStatus('');
+  } catch (e) {
+    console.error(e);
+    setStatus('얼굴 인식 모델 로딩 실패 (네트워크 문제일 수 있음) — 수동 마스킹은 계속 사용 가능합니다.', true);
+  }
+}
+loadModels();
+
+const MATERIAL_OPTIONS = {
+  univ: [
+    ['studentcard', '학생증'],
+    ['enrollment', '재학증명서'],
+    ['grades', '성적증명서'],
+    ['portal', '포털(학적) 스크린샷'],
+  ],
+  high: [
+    ['studentcard', '학생증'],
+    ['grades', '성적증명서'],
+    ['record', '생활기록부'],
+    ['etc_cert', '기타 증명서'],
+  ],
+};
+
+function syncDocTypeUI() {
+  const isHigh = document.getElementById('docTypeHigh').checked;
+  document.getElementById('highYearRow').style.display = isHigh ? 'none' : 'flex';
+  if (isHigh) document.getElementById('highYearCheck').checked = false;
+
+  const select = document.getElementById('materialType');
+  const opts = MATERIAL_OPTIONS[isHigh ? 'high' : 'univ'];
+  select.innerHTML = opts.map(([v, label]) => `<option value="${v}">${label}</option>`).join('');
+  if (typeof validateMaterial === 'function') validateMaterial();
+}
+document.querySelectorAll('input[name="docType"]').forEach(r => r.addEventListener('change', syncDocTypeUI));
+syncDocTypeUI();
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+function validateMaterial() {
+  const docType = document.querySelector('input[name="docType"]:checked').value;
+  const isHighYear = docType === 'univ' && document.getElementById('highYearCheck').checked;
+  const material = document.getElementById('materialType').value;
+  const errEl = document.getElementById('validationError');
+
+  let reason = null;
+  if (isHighYear && material === 'studentcard') {
+    reason = '고학번(입학 6년 차 이상)은 학생증으로 인증할 수 없어요. 6개월 이내 발급된 재학증명서·성적증명서·포털(학적) 스크린샷만 가능합니다.';
+  }
+
+  if (reason) {
+    errEl.textContent = '⚠ ' + reason;
+    errEl.style.display = 'block';
+    return false;
+  }
+  errEl.style.display = 'none';
+  errEl.textContent = '';
+  return true;
+}
+document.getElementById('materialType').addEventListener('change', validateMaterial);
+document.getElementById('highYearCheck').addEventListener('change', validateMaterial);
+document.querySelectorAll('input[name="docType"]').forEach(r => r.addEventListener('change', validateMaterial));
+
+function handleFile(file) {
+  if (!validateMaterial()) return; // 자료 종류 자체가 인증 불가 조건이면 업로드를 진행하지 않음
+  const reader = new FileReader();
+  reader.onload = ev => {
+    img = new Image();
+    img.onload = () => onImageLoaded();
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function onImageLoaded() {
+  workArea.style.display = 'block';
+  resultArea.style.display = 'none';
+  document.getElementById('mainGrid').style.display = 'grid';
+  document.getElementById('kakaoRejectBanner').style.display = 'none';
+  regions = [];
+
+  const maxW = 760;
+  const scale = Math.min(1, maxW / img.width);
+  const w = Math.round(img.width * scale);
+  const h = Math.round(img.height * scale);
+
+  [baseCanvas, overlay].forEach(c => { c.width = w; c.height = h; c.style.width = w + 'px'; c.style.height = h + 'px'; });
+  const ctx = baseCanvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+
+  renderRegions();
+  runDetection(w, h);
+  setupManualDraw();
+}
+
+async function runDetection(w, h) {
+  setStatus('원본은 서버로 전송되지 않습니다. 브라우저 안에서 얼굴/텍스트 인식 중...');
+
+  // 얼굴 감지
+  if (modelsReady) {
+    try {
+      const dets = await faceapi.detectAllFaces(baseCanvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 320 }));
+      dets.forEach(d => {
+        regions.push({ x: d.box.x, y: d.box.y, w: d.box.width, h: d.box.height, type: 'face', label: '얼굴', masked: true });
+      });
+      renderRegions();
+    } catch (e) { console.error('face detect fail', e); }
+  }
+
+  // OCR 텍스트 감지 — "인증 필수 3(4)항목만 노출 유지, 나머지는 기본 마스킹" 원칙
+  try {
+    setStatus('텍스트 인식 중 — 최초 1회는 언어 데이터 다운로드로 다소 걸릴 수 있어요...');
+    const { data } = await Tesseract.recognize(baseCanvas, 'kor+eng', {
+      logger: m => { if (m.status) setStatus(`OCR: ${m.status} ${(m.progress*100||0).toFixed(0)}%`); }
+    });
+    // Tesseract 한글 인식은 줄 단위(data.lines)가 라벨+값을 한 줄로 묶어줘서 더 안정적
+    const lines = (data.lines && data.lines.length) ? data.lines : (data.words || []);
+
+    // 카카오톡 학생증 / 카카오톡 문자·대화 캡처본은 자료 종류 불문하고 인증 불가 — 이미지 안 텍스트로 자동 감지해서 차단
+    const KAKAO_REJECT_KEYWORDS = ['카카오톡', '카카오'];
+    const kakaoDetected = lines.some(ln => {
+      const t = (ln.text || '').replace(/[^\p{L}\p{N}]/gu, '');
+      return KAKAO_REJECT_KEYWORDS.some(k => t.includes(k));
+    });
+    if (kakaoDetected) {
+      document.getElementById('mainGrid').style.display = 'none';
+      const banner = document.getElementById('kakaoRejectBanner');
+      banner.textContent = '⚠ 인증 불가, 위에 적혀진 다른 자료를 업로드 하세요!';
+      banner.style.display = 'block';
+      setStatus('카카오톡 관련 자료가 감지되어 인증이 제한됩니다.', true);
+      return;
+    }
+
+    const docType = document.querySelector('input[name="docType"]:checked').value; // 'univ' | 'high'
+    const isHighYear = docType === 'univ' && document.getElementById('highYearCheck').checked;
+    // 노출 유지(마스킹 금지) 라벨: 대학생은 대학명·이름·학번, 고등학생은 학교명·이름만
+    const PROTECT_KEYWORDS = docType === 'high'
+      ? ['고등학교', '고교', '학교', '소속', '성명', '이름']
+      : ['대학교', '대학명', '학교', '소속', '성명', '이름', '학번', '학적'];
+    const DATE_KEEP_KEYWORDS = ['발급일','발급일자','교부일','교부일자','발행일','조회일','신청일','요청일자','출력일','수여일자','학위수여일자','증서번호'];
+    const protectKeywords = isHighYear ? [...PROTECT_KEYWORDS, ...DATE_KEEP_KEYWORDS] : PROTECT_KEYWORDS;
+
+    // 발행일은 라벨 없이 문서 맨 하단에 날짜만 찍혀 있는 경우가 많음 — 고학번은 라벨 인식 실패에 대비해
+    // "가장 아래쪽에 있는 날짜 형식 줄"을 위치 기반으로 추가 보호
+    const DATE_PATTERN = /\d{4}\s?[.\-/년]\s?\d{1,2}\s?[.\-/월]\s?\d{1,2}\s?일?/;
+    let bottomDateLine = null;
+    if (isHighYear) {
+      lines.forEach(ln => {
+        const c = (ln.text || '').replace(/\s+/g, '');
+        if (ln.bbox && DATE_PATTERN.test(c)) {
+          if (!bottomDateLine || ln.bbox.y0 > bottomDateLine.bbox.y0) bottomDateLine = ln;
+        }
+      });
+    }
+
+    // 절대 노출되면 안 되는 항목 — 보호 키워드(이름/성명 등)와 겹쳐도 무조건 이쪽이 우선
+    // (예: "담임교사 성명"은 '성명'이 있어도 담임교사명이라 반드시 마스킹)
+    const FORCE_MASK_KEYWORDS = ['담임', '주소', '성적', '평점', '석차', '등급', '성별', '카드번호', '계좌번호'];
+
+    // 형식이 뚜렷한 항목은 패턴으로 무조건 마스킹 대상
+    const RRN_PATTERN = /\d{6}\s*-\s*[\d*]{6,7}/;                          // 주민등록번호 13자리
+    const PHONE_PATTERN = /01[0-9][-.\s]?\d{3,4}[-.\s]?\d{4}/;             // 전화번호/휴대폰번호
+    const CARD_PATTERN = /\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{2,4}/;       // 카드번호
+    const EMAIL_PATTERN = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/; // 이메일 주소
+
+    lines.forEach(ln => {
+      if (ln === bottomDateLine) return; // 하단 발행일 후보 → 마스킹 안 함
+      const raw = (ln.text || '').trim();
+      const b = ln.bbox;
+      if (!raw || !b) return;
+      // 한글 OCR이 음절 사이에 공백/밑줄 등 잡문자를 끼워 넣는 경우가 많아, 패턴 매칭용(compact)과
+      // 키워드 비교용(keywordText, 문자·숫자 외 전부 제거)을 분리해서 키워드 인식을 더 견고하게 함
+      const compact = raw.replace(/\s+/g, '');
+      const keywordText = raw.replace(/[^\p{L}\p{N}]/gu, '');
+
+      const isForceMask = FORCE_MASK_KEYWORDS.some(k => keywordText.includes(k));
+      if (!isForceMask && protectKeywords.some(k => keywordText.includes(k))) return; // 인증 필수 항목 → 마스킹 안 함
+
+      const digitCount = (compact.match(/[0-9]/g) || []).length;
+      const isRRN = RRN_PATTERN.test(compact);
+      const isPhone = PHONE_PATTERN.test(compact);
+      const isCard = CARD_PATTERN.test(compact);
+      const isEmail = EMAIL_PATTERN.test(compact);
+      const isNumericish = digitCount >= 4;
+
+      if (isForceMask || isRRN || isPhone || isCard || isEmail || isNumericish) {
+        regions.push({
+          x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0,
+          type: 'text', label: compact, masked: true
+        });
+      }
+    });
+
+    const protectedLabel = docType === 'high' ? '고등학교명·이름' : `대학명·이름·학번${isHighYear ? '·발행일자' : ''}`;
+    setStatus(`감지 완료 — 얼굴 ${regions.filter(r=>r.type==='face').length}건, 마스킹 후보 ${regions.filter(r=>r.type==='text').length}건 (${protectedLabel}은 자동 제외). 확인 후 필요시 보정하세요.`);
+  } catch (e) {
+    console.error(e);
+    setStatus('OCR 인식 실패 (네트워크/언어팩 문제일 수 있음) — 이미지 위를 드래그해 수동으로 마스킹해 주세요.', true);
+  }
+  renderRegions();
+}
+
+function renderRegions() {
+  regionCount.textContent = regions.length;
+  regionList.innerHTML = '';
+  regions.forEach((r, i) => {
+    const el = document.createElement('div');
+    el.className = 'region-item' + (r.masked ? ' masked' : '');
+    el.innerHTML = `<span class="tag ${r.type}">${r.type === 'face' ? '얼굴' : r.type === 'manual' ? '수동' : '텍스트'}</span>
+      <span class="txt">${r.type === 'face' ? '얼굴 영역' : (r.label || '영역 ' + (i+1))}</span>
+      <button class="toggle ${r.masked ? 'is-masked' : 'is-unmasked'}" title="${r.masked ? '가리기 해제' : '가리기 적용'}">${r.masked ? '-' : '+'}</button>
+      <button class="del" title="목록에서 삭제">X</button>`;
+    el.querySelector('.toggle').addEventListener('click', () => { r.masked = !r.masked; renderRegions(); });
+    el.querySelector('.del').addEventListener('click', (ev) => { ev.stopPropagation(); regions.splice(i, 1); renderRegions(); });
+    regionList.appendChild(el);
+  });
+  drawOverlay();
+}
+
+function drawOverlay() {
+  const ctx = overlay.getContext('2d');
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  regions.forEach(r => {
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = r.type === 'face' ? '#1d4ed8' : r.type === 'manual' ? '#4338ca' : '#b45309';
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+    if (r.masked) {
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+    }
+  });
+}
+
+function setupManualDraw() {
+  let drawing = false, sx = 0, sy = 0;
+  // pointer events unify mouse + touch(스마트폰) + pen 입력
+  overlay.onpointerdown = e => {
+    const rect = overlay.getBoundingClientRect();
+    sx = e.clientX - rect.left; sy = e.clientY - rect.top;
+    drawing = true;
+    overlay.setPointerCapture(e.pointerId);
+  };
+  overlay.onpointermove = e => {
+    if (!drawing) return;
+    const rect = overlay.getBoundingClientRect();
+    const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+    drawOverlay();
+    const ctx = overlay.getContext('2d');
+    ctx.strokeStyle = '#4338ca';
+    ctx.setLineDash([4,3]);
+    ctx.strokeRect(Math.min(sx,cx), Math.min(sy,cy), Math.abs(cx-sx), Math.abs(cy-sy));
+    ctx.setLineDash([]);
+  };
+  overlay.onpointerup = e => {
+    if (!drawing) return;
+    drawing = false;
+    const rect = overlay.getBoundingClientRect();
+    const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+    const w = Math.abs(cx - sx), h = Math.abs(cy - sy);
+    if (w > 6 && h > 6) {
+      regions.push({ x: Math.min(sx,cx), y: Math.min(sy,cy), w, h, type: 'manual', label: '수동 추가 영역', masked: true });
+      renderRegions();
+    } else {
+      drawOverlay();
+    }
+  };
+}
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (img.src) onImageLoaded();
+});
+
+document.getElementById('confirmBtn').addEventListener('click', () => {
+  const out = document.createElement('canvas');
+  out.width = baseCanvas.width; out.height = baseCanvas.height;
+  const octx = out.getContext('2d');
+  octx.drawImage(baseCanvas, 0, 0);
+  regions.filter(r => r.masked).forEach(r => {
+    octx.fillStyle = '#000';
+    octx.fillRect(r.x, r.y, r.w, r.h);
+  });
+  const dataUrl = out.toDataURL('image/png');
+  resultImg.src = dataUrl;
+  downloadBtn.href = dataUrl;
+  workArea.style.display = 'none';
+  resultArea.style.display = 'block';
+});
+
+document.getElementById('editAgainBtn').addEventListener('click', () => {
+  resultArea.style.display = 'none';
+  workArea.style.display = 'block';
+});
+
+document.getElementById('submitBtn').addEventListener('click', () => {
+  alert('데모: 실제로는 이 마스킹된 이미지만 서버로 전송되어 심사자에게 전달됩니다. 원본은 전송되지 않았습니다.');
+});
+</script>
+</body>
+</html>
